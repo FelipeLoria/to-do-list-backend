@@ -3,7 +3,8 @@ import cors from "cors"
 import { db } from "./database/knex";
 import { serialize } from "v8";
 import { type } from "os";
-import { TUserDB } from "./types";
+import { TUserDB, TTaskDB } from "./types";
+import { stat } from "fs";
 
 const app = express()
 
@@ -141,6 +142,210 @@ app.delete("/users/:id", async (req:Request, res:Response)=>{
 
         await db("users").del().where({ id: idToDelete })
         res.status(200).send({ message: "User deletado com sucesso" })
+
+    } catch (error) {
+        console.log(error)
+
+        if (req.statusCode === 200) {
+            res.status(500)
+        }
+
+        if (error instanceof Error) {
+            res.send(error.message)
+        } else {
+            res.send("Error inesperado")
+        }
+    }
+})
+
+app.get('/tasks', async (req:Request, res:Response) => {
+    try {
+        const searchTerm = req.query.q as string | undefined
+
+        if (searchTerm === undefined) {
+            const result = await db("tasks")
+            res.status(200).send(result)
+        } else {
+            const result = await db("tasks")
+            .where("title", "LIKE", `%${searchTerm}%`)
+            .orWhere("description", "LIKE", `%${searchTerm}%`)
+            res.status(200).send(result)
+        }
+
+    } catch (error) {
+        console.log(error)
+
+        if (req.statusCode === 200) {
+            res.status(500)
+        }
+
+        if (error instanceof Error) {
+            res.send(error.message)
+        } else {
+            res.send("Error inesperado")
+        }
+    }
+})
+
+app.post("/tasks", async (req:Request, res:Response)=>{
+    try {
+        
+        const {id, title, description} = req.body
+
+        if (typeof id !== "string" || typeof title !== "string" || typeof description !== "string") {
+            res.status(400)
+            throw new Error ("Os dados preenchidos devem ser strings")
+        }
+
+        if (id.length < 4 || title.length < 2) {
+            res.status(400)
+            throw new Error ("'id' deve possuir pelo menos 4 caracteres \n 'title' deve possuir pelo menos 2 caracteres")
+        }
+
+        const [taskIdAlreadyExist]: TTaskDB[] | undefined[] =  await db("tasks").where({id})
+
+        if (taskIdAlreadyExist) {
+            res.status(400)
+            throw new Error ("'id' já existente")
+        }
+
+        const newTask = {
+            id,
+            title,
+            description
+        }
+
+        await db("tasks").insert(newTask)
+
+        const [insertedTaks] = await db("Tasks").where({ id })
+
+        res.status(201).send({message: "Taks criado com sucesso", 
+        task: insertedTaks})
+
+    } catch (error) {
+        console.log(error)
+
+        if (req.statusCode === 200) {
+            res.status(500)
+        }
+
+        if (error instanceof Error) {
+            res.send(error.message)
+        } else {
+            res.send("Error inesperado")
+        }
+    }
+})
+
+app.put("/tasks/:id", async (req:Request, res:Response)=>{
+    try {
+        
+        const idToEdit = req.params.id
+
+        const newId = req.body.id
+        const newtitle = req.body.title
+        const newDescription = req.body.description
+        const newCreatedAt = req.body.createdAt
+        const newStatus = req.body.status
+
+        if (newId !== undefined) {
+            if (typeof newId !== "string" ) {
+                res.status(400)
+                throw new Error ("'id' deve ser string")
+            }
+    
+            if (newId.length < 4) {
+                res.status(400)
+                throw new Error ("'id' deve possuir pelo menos 4 caracteres")
+            }
+        }
+
+        if (newtitle !== undefined){
+            if (typeof newtitle !== "string") {
+                res.status(400)
+                throw new Error ("'title' deve ser string")
+            }
+    
+            if (newtitle.length < 2) {
+                res.status(400)
+                throw new Error ("'title' deve possuir pelo menos 2 caracteres")
+            }
+        }
+
+        if (newDescription !== undefined) {
+            if (typeof newDescription !== "string") {
+                res.status(400)
+                throw new Error ("'description' deve ser string")
+            }
+        }
+
+        if (newCreatedAt !== undefined) {
+            if (typeof newCreatedAt !== "string") {
+                res.status(400)
+                throw new Error ("'created_at' deve ser string")
+            }
+        }
+
+        if (newStatus !== undefined) {
+            if (typeof newStatus !== "number")
+            res.status(400)
+            throw new Error ("'status' deve ser number (0 ou 1)")
+        }
+
+        const [task]: TTaskDB[] | undefined[] =  await db("tasks").where({id: idToEdit})
+
+        if (!task) {
+            res.status(404)
+            throw new Error ("'id' não encontrado")
+        }
+
+        const newTask: TTaskDB = {
+            id: newId || task.id,
+            title: newtitle || task.title,
+            description: newDescription || task.description,
+            created_at: newCreatedAt || task.created_at,
+            status: isNaN(newStatus) ? task.status : newStatus
+        }
+
+        await db("tasks").update(newTask).where({ id: idToEdit})
+
+        res.status(200).send({message: "Taks editada com sucesso", 
+        task: newTask})
+
+    } catch (error) {
+        console.log(error)
+
+        if (req.statusCode === 200) {
+            res.status(500)
+        }
+
+        if (error instanceof Error) {
+            res.send(error.message)
+        } else {
+            res.send("Error inesperado")
+        }
+    }
+})
+
+app.delete("/tasks/:id", async (req:Request, res:Response)=>{
+    try {
+        
+        const idToDelete = req.params.id
+
+        if (idToDelete[0] !== "t") {
+            res.status(400)
+            throw new Error ("'id' deve iniciar com a letra 't'")
+        }
+
+        const [taskIdToDelete]: TTaskDB[] | undefined[] = await db("tasks").where({ id: idToDelete })
+
+        if (!taskIdToDelete) {
+            res.status(404)
+            throw new Error ("'id' não encontrado")
+        }
+
+        await db("tasks").del().where({ id: idToDelete })
+        res.status(200).send({ message: "Task deletado com sucesso" })
 
     } catch (error) {
         console.log(error)
